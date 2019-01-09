@@ -16,16 +16,17 @@ function checkBuildPlan(plan) {
     return element["target_kind"].includes("custom-build");
   });
 
-  if (custom_build) {
+  /*if (custom_build) {
     success = false;
     return { success, output: "", message: "the build includes custom builds" };
-  }
+  }*/
 
+  /*
   if (invocations.length > 1) {
     success = false;
     return { success, output: "", message: "dependencies are currently deactivated" };
   }
-
+  */
   return { "success": true };
 }
 
@@ -39,18 +40,17 @@ async function wasmGC(wasmFile, callback) {
 async function cargo(tar, options = {}) {
   let crateName = 'rustc_h_' + Math.random().toString(36).slice(2);
   let crateDir = tempDir + '/' + crateName;
-
   await mkdir(crateDir);
 
   let rustTar = crateDir + '/' + 'lib.tar';
-  let wasmFile = crateDir + '/' + 'lib.wasm';
+  let wasmFile = crateDir + '/' + 'target/wasm32-unknown-unknown/debug/lib.wasm';
   await writeFile(rustTar, new Buffer(tar, 'base64').toString('ascii'));
 
   let args = ["tar", "xvf", rustTar, "-C", crateDir];
   await exec(joinCmd(args));
 
   try {
-    let args = [cargoCmd, "build"];
+    let args = [cargoCmd,"+nightly", "build"];
     args.push('--manifest-path=' + crateDir + '/' + 'Cargo.toml');
     args.push('--target=wasm32-unknown-unknown');
 
@@ -65,12 +65,11 @@ async function cargo(tar, options = {}) {
 
     let buildPlanOutput = await exec(joinCmd(planArgs), {});
     let buildPlan = JSON.parse(buildPlanOutput);
-
-    let checkResult = checkBuildPlan(buildPlan);
-
-    if (!checkResult.success)
-      return checkResult;
-
+    // We need to skip this for now
+    //let checkResult = checkBuildPlan(buildPlan);
+   // if (!checkResult.success)
+  //    return checkResult;
+  
     let output;
     let success = false;
 
@@ -86,12 +85,13 @@ async function cargo(tar, options = {}) {
 
       let wasmFile = Object.keys(buildPlan["invocations"].slice(-1)[0]["links"])[0];
 
-      let wasmBindgenJs = "";
+     let wasmBindgenJs = "";
       let wasm = await readFile(wasmFile);
 
       let m = await WebAssembly.compile(wasm);
       let ret = { success, message: output };
       if (WebAssembly.Module.customSections(m, "__wasm_bindgen_unstable").length !== 0) {
+        console.log("in custom section")
         await exec(joinCmd([wasmBindgenCmd, wasmFile, '--no-modules', '--out-dir', tempDir]));
         wasm = await readFile(wasmFile + '_bg.wasm');
         ret.wasmBindgenJs = (await readFile(baseName + '.js')).toString();
@@ -103,7 +103,7 @@ async function cargo(tar, options = {}) {
       return ret;
     } finally {
       if (success) {}
-        //await unlink(wasmFile);
+       // await unlink(wasmFile);
     }
   } finally {
     //await unlink(crateDir);
